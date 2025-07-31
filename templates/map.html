@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>뚜따 지도</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey={{ api_key }}&autoload=false"></script>
+    <style>
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      #map {
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script>
+      // Jinja2 변수를 JavaScript 변수로 안전하게 변환
+      const initialLat = parseFloat("{{ lat }}");
+      const initialLng = parseFloat("{{ lng }}");
+
+      // 서버에서 전달된 마커 데이터
+      let initialMarkers = [];
+      {% if markers %}
+        try {
+          initialMarkers = JSON.parse('{{ markers|tojson }}');
+        } catch (e) {
+          console.error("마커 데이터 파싱 오류:", e);
+        }
+      {% endif %}
+
+      kakao.maps.load(function () {
+        const container = document.getElementById("map");
+        const options = {
+          center: new kakao.maps.LatLng(initialLat, initialLng),
+          level: 3
+        };
+
+        // 지도 생성
+        const map = new kakao.maps.Map(container, options);
+
+        // 마커 저장용 배열
+        let markers = [];
+
+        // 🆕 경로 관련 변수
+        let currentPolyline = null; // 현재 그려진 경로
+        let routeMarkers = []; // 경로 시작/끝 마커들
+
+        // 현재 위치 마커 생성
+        addMarker({
+          id: "current-location",
+          title: "현재 위치",
+          description: "현재 위치입니다.",
+          lat: initialLat,
+          lng: initialLng
+        }, true);
+
+        // 서버에서 받은 초기 마커들 추가
+        if (initialMarkers.length > 0) {
+          initialMarkers.forEach(marker => {
+            addMarker({
+              id: marker.id,
+              title: marker.title,
+              description: marker.description || "",
+              lat: marker.coordinate.latitude,
+              lng: marker.coordinate.longitude
+            });
+          });
+        }
+
+        // 마커 추가 함수
+        function addMarker(markerData, isCurrentLocation = false) {
+          const position = new kakao.maps.LatLng(markerData.lat, markerData.lng);
+
+          // 마커 옵션 설정
+          let markerOptions = {
+            position: position,
+            map: map,
+            title: markerData.title
+          };
+
+          // 현재 위치 마커는 다른 이미지 사용
+          if (isCurrentLocation) {
+            const imageSrc = 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/markerStar.png';
+            const imageSize = new kakao.maps.Size(24, 35);
+            const imageOption = {offset: new kakao.maps.Point(12, 35)};
+            markerOptions.image = new kakao.maps.MarkerImage(imageSrc, imageSize, imageOption);
+          }
+
+          // 마커 생성
+          const marker = new kakao.maps.Marker(markerOptions);
+
+          // 마커 데이터 저장
+          marker.data = markerData;
+          markers.push(marker);
+
+          // 마커 클릭 이벤트 처리
+          kakao.maps.event.addListener(marker, 'click', function() {
+            // React Native 웹뷰로 메시지 전송
+            if (window.ReactNativeWebView) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: "markerClick",
+                id: markerData.id,
+                title: markerData.title,
+                description: markerData.description || "",
+                lat: markerData.lat,
+                lng: markerData.lng
+              }));
+            }
+
+            // 인포윈도우 표시
+            var infowindow = new kakao.maps.InfoWindow({
+              content: '<div style="padding:5px;">' + markerData.title + '</div>'
+            });
+            infowindow.open(map, marker);
+
+            // 3초 후 인포윈도우 닫기
+            setTimeout(() => infowindow.close(), 3000);
+          });
+
+          return marker;
+        }
+
+        // 🆕 경로 그리기 함수
+        window.drawRoute = function(routeData) {
+          console.log("🗺️ 경로 그리기 시작:", routeData.length, "개 포인트");
+
+          // 기존 경로 삭제
+          clearRoute();
+
+          if (!routeData || routeData.length < 2) {
+            console.warn("경로 데이터가 부족합니다. 최소 2개 포인트 필요");
+            return;
+          }
+
+          try {
+            // 경로 좌표 변환
+            const path = routeData.map(point => new kakao.maps.LatLng(point.lat, point.lng));
+
+            // 폴리라인 생성
+            currentPolyline = new kakao.maps.Polyline({
+              path: path,
+              strokeWeight: 5,
+              strokeColor: '#007AFF', // iOS 스타일 파란색
+              strokeOpacity: 0.8,
+              strokeStyle: 'solid'
+            });
+
+            // 지도에 폴리라인 표시
+            currentPolyline.setMap(map);
+
+            // 출발지 마커 추가
+            const startMarker = new kakao.maps.Marker({
+              position: path[0],
+              map: map,
+              image: new kakao.maps.MarkerImage(
+                'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/red_b.png',
+                new kakao.maps.Size(50, 45),
+                { offset: new kakao.maps.Point(15, 43) }
+              )
+            });
+
+            // 도착지 마커 추가
+            const endMarker = new kakao.maps.Marker({
+              position: path[path.length - 1],
+              map: map,
+              image: new kakao.maps.MarkerImage(
+                'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/blue_b.png',
+                new kakao.maps.Size(50, 45),
+                { offset: new kakao.maps.Point(15, 43) }
+              )
+            });
+
+            // 경로 마커들 저장
+            routeMarkers = [startMarker, endMarker];
+
+            // 출발지/도착지 마커 클릭 이벤트
+            kakao.maps.event.addListener(startMarker, 'click', function() {
+              showInfoWindow(startMarker, "출발지", path[0]);
+            });
+
+            kakao.maps.event.addListener(endMarker, 'click', function() {
+              showInfoWindow(endMarker, "도착지", path[path.length - 1]);
+            });
+
+            // 경로가 모두 보이도록 지도 범위 조정
+            const bounds = new kakao.maps.LatLngBounds();
+            path.forEach(point => bounds.extend(point));
+            map.setBounds(bounds);
+
+            console.log("✅ 경로 그리기 완료");
+
+            // React Native로 완료 알림
+            if (window.ReactNativeWebView) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: "routeDrawn",
+                pointCount: routeData.length
+              }));
+            }
+
+          } catch (error) {
+            console.error("❌ 경로 그리기 오류:", error);
+            if (window.ReactNativeWebView) {
+              window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: "routeError",
+                error: error.message
+              }));
+            }
+          }
+        };
+
+        // 🆕 경로 삭제 함수
+        window.clearRoute = function() {
+          console.log("🗺️ 경로 삭제");
+
+          // 폴리라인 삭제
+          if (currentPolyline) {
+            currentPolyline.setMap(null);
+            currentPolyline = null;
+          }
+
+          // 경로 마커들 삭제
+          routeMarkers.forEach(marker => {
+            marker.setMap(null);
+          });
+          routeMarkers = [];
+
+          console.log("✅ 경로 삭제 완료");
+        };
+
+        // 🆕 인포윈도우 표시 함수
+        function showInfoWindow(marker, title, position) {
+          const infowindow = new kakao.maps.InfoWindow({
+            content: `<div style="padding:8px; font-size:12px; text-align:center;">
+                        <strong>${title}</strong><br/>
+                        ${position.getLat().toFixed(6)}, ${position.getLng().toFixed(6)}
+                      </div>`
+          });
+          infowindow.open(map, marker);
+          setTimeout(() => infowindow.close(), 3000);
+        }
+
+        // 마커 업데이트 함수 (웹뷰에서 호출)
+        window.updateMarkers = function(markersData) {
+          // 기존 마커 제거 (현재 위치 마커 제외)
+          markers.forEach(marker => {
+            if (marker.data.id !== "current-location") {
+              marker.setMap(null);
+            }
+          });
+
+          markers = markers.filter(marker => marker.data.id === "current-location");
+
+          // 새 마커 추가
+          markersData.forEach(markerData => {
+            addMarker({
+              id: markerData.id,
+              title: markerData.title,
+              description: markerData.description || "",
+              lat: markerData.coordinate.latitude,
+              lng: markerData.coordinate.longitude
+            });
+          });
+        };
+
+        // 현재 위치로 이동 함수 (웹뷰에서 호출)
+        window.moveToLocation = function(lat, lng) {
+          map.setCenter(new kakao.maps.LatLng(lat, lng));
+        };
+
+        // 지도 이동 이벤트
+        kakao.maps.event.addListener(map, 'dragend', function() {
+          const center = map.getCenter();
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: "mapMoved",
+              lat: center.getLat(),
+              lng: center.getLng()
+            }));
+          }
+        });
+
+        // 🆕 초기화 완료 알림
+        setTimeout(() => {
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: "ready"
+            }));
+          }
+          console.log("🗺️ 카카오맵 초기화 완료");
+        }, 500); // 약간의 지연을 두어 안정성 확보
+      });
+    </script>
+  </body>
+</html>

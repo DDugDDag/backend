@@ -1,0 +1,44 @@
+# ========================
+# ✅ Database 설정
+# ========================
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=your_db_user
+DB_PASSWORD=your_db_password
+DB_NAME=your_database_name
+
+# ========================
+# ✅ Kakao OAuth 설정
+# ========================
+KAKAO_MAP_API_KEY=your_kakao_map_api_key
+KAKAO_REST_API_KEY=your_kakao_rest_api_key
+KAKAO_REDIRECT_URI=http://localhost:8000/api/auth/callback
+
+# ========================
+# ✅ 외부 API 키
+# ========================
+TASHU_API_KEY=your_tashu_api_key
+DUROONUBI_API_KEY=your_duroonubi_api_key
+DAEJEON_BIKE_API_KEY=your_daejeon_bike_api_key
+
+# 대전시 공공 API (노선 및 보관소 등)
+API_KEY=your_encoded_api_key
+ENAPI_KEY=your_encoded_api_key_for_url
+
+# ========================
+# ✅ AI 모델 서버 (선택 사항)
+# ========================
+AI_MODEL_SERVER_URL=http://localhost:5000/api/route
+
+# ========================
+# ✅ JWT 설정
+# ========================
+SECRET_KEY=your_super_secret_jwt_key
+ACCESS_TOKEN_EXPIRE_MINUTES=10080
+ALGORITHM=HS256
+
+# ========================
+# ✅ 서버 설정
+# ========================
+PORT=8000
+ENV=development
