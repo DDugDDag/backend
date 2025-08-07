@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 
 from app.api.schemas.route_schema import RouteRequest, RouteResponse
-from app.api.utils import APIException, NetworkException, AuthenticationException, DataFormatException
+from app.common.utils.exceptions import APIException, NetworkException, AuthenticationException, DataFormatException
 # 서비스 레이어의 클래스들을 직접 import
 from app.services.route.route_service import RouteService
 from app.services.external.external_api import TashuAPI, DuroonubiAPI, DaejeonBikeAPI

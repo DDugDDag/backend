@@ -4,7 +4,7 @@ import logging
 import asyncio
 from typing import List, Dict, Any, Optional
 
-from app.api.utils import calculate_distance, validate_coordinates, DataFormatException
+from app.common.utils import calculate_distance, validate_coordinates, DataFormatException
 # 서비스 레이어에 필요한 다른 서비스들을 import
 from app.services.external.external_api import TashuAPI
 from app.services.ai.ai_integration import AIRouteOptimizer

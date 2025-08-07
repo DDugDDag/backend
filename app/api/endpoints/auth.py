@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from app.database.database import get_db
 from app.database.models.user import User
-from app.api.utils.auth import create_access_token
+from app.common.utils.auth import create_access_token
 from fastapi import Request
 
 KAKAO_RESTAPI_KEY = os.getenv("KAKAO_RESTAPI_KEY")

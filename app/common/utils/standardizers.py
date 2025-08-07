@@ -1,6 +1,6 @@
 # app/api/utils/standardizers.py
-from app.api.utils.validators import safe_get, validate_coordinates, normalize_coordinates
-from app.api.utils.exceptions import DataFormatException
+from app.common.utils.validators import safe_get, validate_coordinates, normalize_coordinates
+from app.common.utils.exceptions import DataFormatException
 import logging
 
 logger = logging.getLogger(__name__)

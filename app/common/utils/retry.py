@@ -3,7 +3,7 @@ import time
 import logging
 from functools import wraps
 import requests
-from app.api.utils.exceptions import APIException
+from app.common.utils.exceptions import APIException
 
 logger = logging.getLogger(__name__)
 

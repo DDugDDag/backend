@@ -1,7 +1,7 @@
 # app/api/endpoints/tashu.py
 
 from fastapi import APIRouter, HTTPException
-from app.api.utils import AuthenticationException, NetworkException, DataFormatException, APIException
+from app.common.utils.exceptions import AuthenticationException, NetworkException, DataFormatException, APIException
 
 router = APIRouter()
 
