@@ -5,7 +5,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 import json
 
-from app.api.utils import calculate_distance, validate_coordinates, DataFormatException
+from app.common.utils import calculate_distance, validate_coordinates, DataFormatException
 from app.services.external.external_api import TashuAPI, DuroonubiAPI
 
 logger = logging.getLogger(__name__)
@@ -13,8 +13,7 @@ logger = logging.getLogger(__name__)
 class AIRouteRequest:
     """AI 모델 요청 데이터 구조"""
     
-    def __init__(self, start_lat: float, start_lng: float, end_lat: float, end_lng: float, 
-                 preferences: Optional[Dict[str, Any]] = None):
+    def __init__(self, start_lat: float, start_lng: float, end_lat: float, end_lng: float, preferences: Optional[Dict[str, Any]] = None):
         self.start_lat = start_lat
         self.start_lng = start_lng
         self.end_lat = end_lat

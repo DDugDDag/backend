@@ -1,25 +1,43 @@
 # app/api/endpoints/route_recommend.py
+
 import logging
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Dict, Any
 
 from app.api.schemas.route_schema import RouteRequest, RouteResponse
 from app.api.utils import APIException, NetworkException, AuthenticationException, DataFormatException
-from app.services.route.route_finder import RouteFinder
+# 서비스 레이어의 클래스들을 직접 import
+from app.services.route.route_service import RouteService
 from app.services.external.external_api import TashuAPI, DuroonubiAPI, DaejeonBikeAPI
 from app.database.database import get_db
+# RouteService가 필요로 하는 클래스들을 import
+from app.services.ai.ai_integration import AIRouteOptimizer
+from app.route_engine import RouteCalculator
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter()
-route_finder = RouteFinder()
-tashu_api = TashuAPI()
-duroonubi_api = DuroonubiAPI()
-daejeon_bike_api = DaejeonBikeAPI()
+router = APIRouter(prefix="/routes", tags=["Routes"])
+
+# 모든 서비스 의존성을 관리하는 팩토리 함수를 정의합니다.
+# 이 함수는 FastAPI의 Depends()를 통해 의존성 주입에 사용됩니다.
+def get_route_service() -> RouteService:
+    """
+    RouteService 인스턴스를 생성하고 의존성을 주입합니다.
+    """
+    tashu_api = TashuAPI()
+    ai_optimizer = AIRouteOptimizer()
+    route_calculator = RouteCalculator()
+    return RouteService(tashu_api, ai_optimizer, route_calculator)
+
+# 기존에 최상단에서 인스턴스화하던 부분을 모두 삭제하고
+# 의존성 주입을 통해 받도록 변경합니다.
 
 @router.get("/bike-paths")
-def get_bike_paths(lat: float, lng: float, radius: int = 2000):
+def get_bike_paths(
+    lat: float, lng: float, radius: int = 2000,
+    duroonubi_api: DuroonubiAPI = Depends()  # DuroonubiAPI를 의존성 주입
+):
     """
     특정 위치 주변의 자전거 도로 정보를 조회하는 API
     """
@@ -55,17 +73,20 @@ def get_bike_paths(lat: float, lng: float, radius: int = 2000):
         raise HTTPException(status_code=500, detail="자전거 도로 정보 조회 중 오류가 발생했습니다.")
 
 
-
 @router.post("/find-path", response_model=RouteResponse)
-def find_path(request: RouteRequest):
+async def find_path(
+    request: RouteRequest,
+    route_service: RouteService = Depends(get_route_service)
+):
     """
     출발지와 목적지 사이의 자전거 경로를 찾는 API
     """
     logger.info(f"경로 찾기 요청: {request.start_lat}, {request.start_lng} -> {request.end_lat}, {request.end_lng}")
     
     try:
-        # 경로 찾기 객체를 사용하여 경로 계산
-        result = route_finder.find_path(
+        # RouteService의 비동기 메서드를 사용하여 경로 계산
+        # 이전에 동기 함수였던 find_path를 find_path_async로 변경했다고 가정합니다.
+        result = await route_service.find_path_async(
             start_lat=request.start_lat,
             start_lng=request.start_lng,
             end_lat=request.end_lat,
@@ -81,7 +102,9 @@ def find_path(request: RouteRequest):
 
 
 @router.get("/bike-routes")
-def get_bike_routes():
+def get_bike_routes(
+    daejeon_bike_api: DaejeonBikeAPI = Depends() # DaejeonBikeAPI를 의존성 주입
+):
     """
     대전시 자전거 노선 정보를 조회하는 API
     """

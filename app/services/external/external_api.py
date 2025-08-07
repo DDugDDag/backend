@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 from app.core.config import TASHU_API_KEY, DUROONUBI_API_KEY, DAEJEON_BIKE_API_KEY
-from app.api.utils import (
+from app.common.utils import (
     APIException, NetworkException, AuthenticationException, DataFormatException,
     retry_on_failure, create_session_with_retry, validate_coordinates,
     standardize_station_data, standardize_bike_path_data, safe_get, calculate_distance

@@ -1,27 +1,31 @@
-# app/api/route_finder.py
+# app/services/route/route_service.py
+
 import logging
 import asyncio
 from typing import List, Dict, Any, Optional
 
-from app.services.external.external_api import TashuAPI
-from app.services.ai.ai_integration import AIRouteOptimizer, AIRouteRequest, AIRouteResponse
 from app.api.utils import calculate_distance, validate_coordinates, DataFormatException
+# 서비스 레이어에 필요한 다른 서비스들을 import
+from app.services.external.external_api import TashuAPI
+from app.services.ai.ai_integration import AIRouteOptimizer
 from app.route_engine import RouteCalculator, RoutePreference
 
 logger = logging.getLogger(__name__)
 
-class RouteFinder:
-    """자전거 경로 찾기 클래스 - AI 모델 연동 + CCH 알고리즘"""
-    
-    def __init__(self):
-        self.tashu_api = TashuAPI()
-        self.ai_optimizer = AIRouteOptimizer()
-        self.route_calculator = RouteCalculator()
+class RouteService:
+    """
+    자전거 경로 찾기 비즈니스 로직을 담당하는 서비스 클래스.
+    의존성 주입(Dependency Injection)을 통해 다른 서비스를 받아서 사용합니다.
+    """
+    def __init__(self, tashu_api: TashuAPI, ai_optimizer: AIRouteOptimizer, route_calculator: RouteCalculator):
+        self.tashu_api = tashu_api
+        self.ai_optimizer = ai_optimizer
+        self.route_calculator = route_calculator
         self._calculator_initialized = False
-        logger.info("경로 찾기 모듈 초기화 완료")
+        logger.info("RouteService 모듈 초기화 완료")
     
     async def _ensure_calculator_initialized(self):
-        """RouteCalculator 초기화 보장"""
+        """CCH 알고리즘 엔진 초기화 보장"""
         if not self._calculator_initialized:
             logger.info("CCH 경로 계산 엔진 초기화 중...")
             success = self.route_calculator.initialize(num_routes=500, num_storage=50)
@@ -31,9 +35,7 @@ class RouteFinder:
             else:
                 logger.warning("CCH 경로 계산 엔진 초기화 실패, AI 모델만 사용")
     
-    def find_path(self, start_lat: float, start_lng: float, 
-                  end_lat: float, end_lng: float, 
-                  preferences: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def find_path(self, start_lat: float, start_lng: float, end_lat: float, end_lng: float, preferences: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         동기적으로 출발지와 목적지 사이의 최적 자전거 경로를 찾는 함수
         CCH 알고리즘을 우선 사용하고, 실패 시 AI 모델 사용
@@ -85,9 +87,7 @@ class RouteFinder:
             logger.error(f"경로 찾기 오류: {e}")
             return self._generate_basic_route(start_lat, start_lng, end_lat, end_lng)
     
-    def _convert_cch_route_to_response(self, cch_route: List[Dict], 
-                                      start_lat: float, start_lng: float,
-                                      end_lat: float, end_lng: float) -> Dict[str, Any]:
+    def _convert_cch_route_to_response(self, cch_route: List[Dict], start_lat: float, start_lng: float, end_lat: float, end_lng: float) -> Dict[str, Any]:
         """
         CCH 알고리즘 결과를 API 응답 형식으로 변환
         """
@@ -164,15 +164,16 @@ class RouteFinder:
         }
     
     async def find_path_async(self, start_lat: float, start_lng: float, end_lat: float, end_lng: float, 
-                        preferences: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                             preferences: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        비동기적으로 출발지와 목적지 사이의 최적 자전거 경로를 찾는 함수
+        비동기적으로 출발지와 목적지 사이의 최적 자전거 경로를 찾는 함수.
         AI 모델을 사용하여 경로를 최적화합니다.
         """
         logger.info(f"경로 찾기 요청: ({start_lat}, {start_lng}) -> ({end_lat}, {end_lng})")
         
         try:
             # AI 모델 요청 객체 생성
+            from app.services.ai.ai_integration import AIRouteRequest
             ai_request = AIRouteRequest(start_lat, start_lng, end_lat, end_lng, preferences)
             
             # AI 모델을 사용하여 최적 경로 찾기
@@ -186,7 +187,7 @@ class RouteFinder:
             
             # 최종 응답 구성
             response = {
-                "route_id": None,  # 추후 경로 저장 기능 구현 시 사용
+                "route_id": None,
                 "summary": {
                     "distance": ai_response.total_distance,
                     "duration": ai_response.estimated_duration,
@@ -214,11 +215,15 @@ class RouteFinder:
             raise
         except Exception as e:
             logger.error(f"경로 찾기 중 오류: {e}")
-            # 심각한 오류 시 기본 경로 반환
             return await self._generate_fallback_route(start_lat, start_lng, end_lat, end_lng)
+
+    def get_ai_model_status(self) -> Dict[str, Any]:
+        """AI 모델 상태 조회"""
+        return self.ai_optimizer.get_model_status()
+
     
     def find_path(self, start_lat: float, start_lng: float, end_lat: float, end_lng: float, 
-                  preferences: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                preferences: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         동기적 경로 찾기 함수 (기존 API 호환성을 위해 유지)
         내부적으로 비동기 함수를 호출합니다.
@@ -241,7 +246,7 @@ class RouteFinder:
             return self._generate_basic_route(start_lat, start_lng, end_lat, end_lng)
     
     async def _get_nearby_stations_async(self, start_lat: float, start_lng: float, 
-                                   end_lat: float, end_lng: float) -> List[Dict[str, Any]]:
+                                end_lat: float, end_lng: float) -> List[Dict[str, Any]]:
         """비동기적으로 출발지와 목적지 근처의 자전거 대여소를 찾는 함수"""
         logger.info("주변 자전거 대여소 검색")
         
@@ -288,7 +293,7 @@ class RouteFinder:
             return []
     
     def _generate_turn_by_turn_instructions(self, route_points: List[Dict[str, float]], 
-                                          nearby_stations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+                                        nearby_stations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """턴바이턴 안내 지시사항 생성"""
         logger.info("턴바이턴 안내 생성")
         
@@ -314,7 +319,7 @@ class RouteFinder:
                 "step": len(instructions) + 1,
                 "type": "bike_station",
                 "description": f"{station['name']} 대여소에서 자전거를 대여할 수 있습니다. "
-                             f"현재 {station['available_bikes']}대 이용 가능",
+                            f"현재 {station['available_bikes']}대 이용 가능",
                 "distance": round(station["distance_from_start"], 2),
                 "duration": max(1, int(station["distance_from_start"] / 5 * 60)),  # 5km/h 도보 속도
                 "coordinate": {"lat": station["lat"], "lng": station["lng"]},
@@ -328,7 +333,7 @@ class RouteFinder:
         # 중간 경로 안내 생성
         total_distance = sum(
             calculate_distance(route_points[i]["lat"], route_points[i]["lng"], 
-                             route_points[i+1]["lat"], route_points[i+1]["lng"])
+                            route_points[i+1]["lat"], route_points[i+1]["lng"])
             for i in range(len(route_points) - 1)
         )
         
@@ -497,7 +502,3 @@ class RouteFinder:
                 "process_time": 0.05
             }
         }
-    
-    def get_ai_model_status(self) -> Dict[str, Any]:
-        """AI 모델 상태 조회"""
-        return self.ai_optimizer.get_model_status() 

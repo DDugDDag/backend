@@ -1,3 +1,4 @@
+# back\tests\test_external_apis.py
 import pytest
 import unittest.mock as mock
 from unittest.mock import Mock, patch, MagicMock
@@ -5,7 +6,7 @@ import requests
 from datetime import datetime
 
 from app.services.external.external_api import TashuAPI, DuroonubiAPI, DaejeonBikeAPI
-from app.api.utils import APIException, NetworkException, AuthenticationException, DataFormatException
+from app.common.utils import APIException, NetworkException, AuthenticationException, DataFormatException
 
 class TestTashuAPI:
     """타슈 API 테스트"""
@@ -27,7 +28,7 @@ class TestTashuAPI:
             ]
         }
         
-        with patch('app.api.external.create_session_with_retry') as mock_create_session:
+        with patch('app.common.utils.retry.create_session_with_retry') as mock_create_session:
             # Mock 세션과 응답 설정
             mock_response = Mock()
             mock_response.ok = True
@@ -51,7 +52,7 @@ class TestTashuAPI:
     
     def test_get_stations_network_error_fallback(self):
         """타슈 대여소 조회 네트워크 오류 시 더미 데이터 반환 테스트"""
-        with patch('app.api.external.create_session_with_retry') as mock_create_session:
+        with patch('app.common.utils.retry.create_session_with_retry') as mock_create_session:
             # Mock 세션에서 네트워크 오류 발생
             mock_session = Mock()
             mock_session.get.side_effect = requests.ConnectionError("Connection failed")
@@ -67,7 +68,7 @@ class TestTashuAPI:
     
     def test_get_stations_auth_error(self):
         """타슈 대여소 조회 인증 오류 테스트"""
-        with patch('app.api.external.create_session_with_retry') as mock_create_session:
+        with patch('app.common.utils.retry.create_session_with_retry') as mock_create_session:
             # Mock 인증 실패 응답
             mock_response = Mock()
             mock_response.ok = False
@@ -92,7 +93,7 @@ class TestTashuAPI:
             "last_updated": "2023-05-15T14:30:00Z"
         }
         
-        with patch('app.api.external.create_session_with_retry') as mock_create_session:
+        with patch('app.common.utils.retry.create_session_with_retry') as mock_create_session:
             mock_response = Mock()
             mock_response.ok = True
             mock_response.status_code = 200
@@ -112,7 +113,7 @@ class TestTashuAPI:
     
     def test_no_api_key(self):
         """API 키 없이 초기화 테스트"""
-        with patch('app.api.external.create_session_with_retry'):
+        with patch('app.common.utils.retry.create_session_with_retry'):
             api = TashuAPI(api_key="")
             result = api.get_stations()
             
@@ -140,7 +141,7 @@ class TestDuroonubiAPI:
             ]
         }
         
-        with patch('app.api.external.create_session_with_retry') as mock_create_session:
+        with patch('app.common.utils.retry.create_session_with_retry') as mock_create_session:
             mock_response = Mock()
             mock_response.ok = True
             mock_response.status_code = 200
@@ -160,7 +161,7 @@ class TestDuroonubiAPI:
     
     def test_invalid_coordinates(self):
         """잘못된 좌표 입력 테스트"""
-        with patch('app.api.external.create_session_with_retry'):
+        with patch('app.common.utils.retry.create_session_with_retry'):
             duroonubi_api = DuroonubiAPI(api_key="test_api_key")
             
             with pytest.raises(DataFormatException):
@@ -171,7 +172,7 @@ class TestDuroonubiAPI:
     
     def test_network_error_fallback(self):
         """두루누비 네트워크 오류 시 더미 데이터 반환 테스트"""
-        with patch('app.api.external.create_session_with_retry') as mock_create_session:
+        with patch('app.common.utils.retry.create_session_with_retry') as mock_create_session:
             mock_session = Mock()
             mock_session.get.side_effect = requests.ConnectionError("Connection failed")
             mock_create_session.return_value = mock_session
@@ -201,7 +202,7 @@ class TestDaejeonBikeAPI:
             ]
         }
         
-        with patch('app.api.external.create_session_with_retry') as mock_create_session:
+        with patch('app.common.utils.retry.create_session_with_retry') as mock_create_session:
             mock_response = Mock()
             mock_response.ok = True
             mock_response.status_code = 200
@@ -222,7 +223,7 @@ class TestDaejeonBikeAPI:
     
     def test_network_error_fallback(self):
         """대전 자전거 API 네트워크 오류 시 더미 데이터 반환 테스트"""
-        with patch('app.api.external.create_session_with_retry') as mock_create_session:
+        with patch('app.common.utils.retry.create_session_with_retry') as mock_create_session:
             mock_session = Mock()
             mock_session.get.side_effect = requests.ConnectionError("Connection failed")
             mock_create_session.return_value = mock_session
@@ -240,7 +241,7 @@ class TestIntegration:
     
     def test_all_apis_integration(self):
         """모든 API 통합 테스트 (더미 데이터)"""
-        with patch('app.api.external.create_session_with_retry'):
+        with patch('app.common.utils.retry.create_session_with_retry'):
             # API 인스턴스 생성 (빈 키로 더미 데이터 테스트)
             tashu = TashuAPI(api_key="")
             duroonubi = DuroonubiAPI(api_key="")
@@ -284,7 +285,7 @@ class TestIntegration:
 
     def test_error_handling_integration(self):
         """오류 처리 통합 테스트"""
-        with patch('app.api.external.create_session_with_retry') as mock_create_session:
+        with patch('app.common.utils.retry.create_session_with_retry') as mock_create_session:
             # 네트워크 오류 발생 시뮬레이션
             mock_session = Mock()
             mock_session.get.side_effect = requests.ConnectionError("Connection failed")
