@@ -1,14 +1,9 @@
 # tests/api/test_users.py
 
-import sys
-import os
 import pytest
 from fastapi.testclient import TestClient
-# 프로젝트 루트 경로를 sys.path에 추가하여 app 모듈을 찾도록 합니다.
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from app.main import app
+from main import app
 from app.database.models.user import User
-from app.database.models.route import Route
 from app.database.database import Base, get_db
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -32,6 +27,7 @@ app.dependency_overrides[get_db] = override_get_db
 
 @pytest.fixture(name="db_session")
 def db_session_fixture():
+    # 픽스처가 실행될 때마다 모든 테이블을 생성하고 테스트 종료 후 삭제
     Base.metadata.create_all(bind=test_engine)
     db = TestingSessionLocal()
     try:
@@ -43,9 +39,11 @@ def db_session_fixture():
 client = TestClient(app)
 
 def test_get_user_info_success(db_session):
+    # 테스트 사용자 생성 (username과 email 명시적으로 추가)
     test_user = User(
         nickname="testuser",
         email="test@example.com",
+        username="testuser", # 🆕 username 필드 추가
         kakao_id="kakao_12345"
     )
     db_session.add(test_user)
@@ -55,8 +53,10 @@ def test_get_user_info_success(db_session):
     response = client.get(f"/api/users/{test_user.id}")
     assert response.status_code == 200
     assert response.json()["nickname"] == "testuser"
+    assert response.json()["username"] == "testuser"
 
-def test_get_user_info_not_found():
+
+def test_get_user_info_not_found(db_session): # 🆕 픽스처 추가
     response = client.get("/api/users/9999")
     assert response.status_code == 404
     assert response.json()["detail"] == "사용자를 찾을 수 없습니다."
