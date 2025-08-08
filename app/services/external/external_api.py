@@ -1,27 +1,31 @@
-# app/api/external.py
+# app/services/external/external_api.py
 import logging
-import requests
+import httpx
+import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 from app.core.config import TASHU_API_KEY, DUROONUBI_API_KEY, DAEJEON_BIKE_API_KEY
-from app.common.utils import (
-    APIException, NetworkException, AuthenticationException, DataFormatException,
-    retry_on_failure, create_session_with_retry, validate_coordinates,
-    standardize_station_data, standardize_bike_path_data, safe_get, calculate_distance
-)
+from app.common.utils.exceptions import APIException, NetworkException, AuthenticationException, DataFormatException
+from app.common.utils.retry import retry_on_failure, create_session_with_retry
+from app.common.utils.validators import validate_coordinates, safe_get
+from app.common.utils.standardizers import standardize_station_data, standardize_bike_path_data
+from app.common.utils.cache import get_cache, set_cache
 
 logger = logging.getLogger(__name__)
+
+# 세션 재사용을 위한 싱글톤 HTTPX 클라이언트
+async_session = httpx.AsyncClient(timeout=10.0)
+
 
 class TashuAPI:
     """타슈(대전 공공자전거) API 연동 클래스"""
     
-    # 실제 타슈 API URL (추후 실제 URL로 교체 필요)
     BASE_URL = "https://api.tashu.or.kr/api"
     
     def __init__(self, api_key: str = TASHU_API_KEY):
         self.api_key = api_key
-        self.session = create_session_with_retry()
+        # 동기 호출용 세션은 제거하고, 비동기 세션을 사용
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -30,9 +34,15 @@ class TashuAPI:
         logger.info(f"타슈 API 클라이언트 초기화 완료")
     
     @retry_on_failure(max_retries=3, delay=1.0)
-    def get_stations(self) -> List[Dict[str, Any]]:
-        """모든 대여소 정보 조회"""
-        logger.info("타슈 대여소 정보 조회 시작")
+    async def get_stations(self) -> List[Dict[str, Any]]:
+        """모든 대여소 정보 조회 (캐싱 적용)"""
+        cache_key = "tashu_stations"
+        cached_data = get_cache(cache_key)
+        if cached_data:
+            logger.info("✅ 캐시된 타슈 대여소 정보 반환")
+            return cached_data
+            
+        logger.info("타슈 대여소 정보 조회 시작 (API 호출)")
         
         if not self.api_key:
             logger.error("타슈 API 키가 설정되지 않음")
@@ -40,83 +50,30 @@ class TashuAPI:
         
         try:
             url = f"{self.BASE_URL}/stations"
-            logger.debug(f"타슈 API 호출: {url}")
+            response = await async_session.get(url, headers=self.headers)
+            response.raise_for_status()
             
-            response = self.session.get(url, headers=self.headers, timeout=10)
-            
-            # HTTP 상태 코드 체크
-            if response.status_code == 401:
-                raise AuthenticationException("타슈 API 인증 실패", response.status_code, "TASHU")
-            elif response.status_code == 404:
-                logger.warning("타슈 API 엔드포인트를 찾을 수 없음 - 더미 데이터 반환")
-                return self._get_dummy_stations()
-            elif not response.ok:
-                raise APIException(f"타슈 API 오류: {response.status_code}", response.status_code, "TASHU")
-            
-            # 응답 데이터 파싱
-            try:
-                data = response.json()
-            except ValueError as e:
-                raise DataFormatException(f"타슈 API 응답 파싱 실패: {e}", api_name="TASHU")
-            
-            # 데이터 처리 및 표준화
+            data = response.json()
             stations = self._process_stations_data(data)
-            logger.info(f"타슈 대여소 {len(stations)}개 조회 완료")
             
+            # 캐싱
+            set_cache(cache_key, stations, ex=600)  # 10분 캐싱
+            
+            logger.info(f"타슈 대여소 {len(stations)}개 조회 완료")
             return stations
             
-        except (AuthenticationException, DataFormatException, APIException):
-            # 이 예외들은 다시 발생시켜서 상위에서 처리하도록 함
-            raise
-        except requests.RequestException as e:
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationException("타슈 API 인증 실패", e.response.status_code, "TASHU")
+            else:
+                raise APIException(f"타슈 API 오류: {e.response.status_code}", e.response.status_code, "TASHU")
+        except httpx.RequestError as e:
             logger.error(f"타슈 API 네트워크 오류: {e}")
-            if "Connection" in str(e) or "Timeout" in str(e):
-                # 네트워크 오류 시 더미 데이터 반환
-                logger.warning("네트워크 오류로 인해 타슈 더미 데이터 반환")
-                return self._get_dummy_stations()
-            raise NetworkException(f"타슈 API 네트워크 오류: {e}", api_name="TASHU")
+            return self._get_dummy_stations()
         except Exception as e:
             logger.error(f"타슈 API 처리 중 예기치 않은 오류: {e}")
             return self._get_dummy_stations()
-    
-    @retry_on_failure(max_retries=3, delay=1.0)
-    def get_station_status(self, station_id: str) -> Dict[str, Any]:
-        """특정 대여소의 상태 조회"""
-        logger.info(f"타슈 대여소 상태 조회: {station_id}")
-        
-        if not self.api_key:
-            logger.error("타슈 API 키가 설정되지 않음")
-            return self._get_dummy_station_status(station_id)
-        
-        try:
-            url = f"{self.BASE_URL}/stations/{station_id}/status"
-            logger.debug(f"타슈 상태 API 호출: {url}")
-            
-            response = self.session.get(url, headers=self.headers, timeout=10)
-            
-            if response.status_code == 401:
-                raise AuthenticationException("타슈 API 인증 실패", response.status_code, "TASHU")
-            elif response.status_code == 404:
-                logger.warning(f"대여소 {station_id}를 찾을 수 없음")
-                return self._get_dummy_station_status(station_id)
-            elif not response.ok:
-                raise APIException(f"타슈 상태 API 오류: {response.status_code}", response.status_code, "TASHU")
-            
-            data = response.json()
-            status = self._process_station_status_data(data, station_id)
-            logger.info(f"타슈 대여소 {station_id} 상태 조회 완료")
-            
-            return status
-            
-        except (AuthenticationException, DataFormatException, APIException):
-            # 이 예외들은 다시 발생시켜서 상위에서 처리하도록 함
-            raise
-        except requests.RequestException as e:
-            logger.error(f"타슈 상태 API 네트워크 오류: {e}")
-            return self._get_dummy_station_status(station_id)
-        except Exception as e:
-            logger.error(f"타슈 상태 API 처리 중 오류: {e}")
-            return self._get_dummy_station_status(station_id)
+
     
     def _process_stations_data(self, raw_data: Any) -> List[Dict[str, Any]]:
         """타슈 대여소 데이터 처리 및 표준화"""
@@ -170,6 +127,7 @@ class TashuAPI:
             logger.error(f"타슈 대여소 데이터 처리 실패: {e}")
             return []
     
+    
     def _process_station_status_data(self, raw_data: Any, station_id: str) -> Dict[str, Any]:
         """타슈 대여소 상태 데이터 처리"""
         try:
@@ -188,7 +146,7 @@ class TashuAPI:
         except Exception as e:
             logger.error(f"타슈 상태 데이터 처리 실패: {e}")
             return self._get_dummy_station_status(station_id)
-    
+
     def _get_dummy_stations(self) -> List[Dict[str, Any]]:
         """테스트용 더미 대여소 데이터"""
         logger.info("타슈 더미 데이터 반환")
@@ -235,15 +193,49 @@ class TashuAPI:
             "last_updated": datetime.now().isoformat()
         }
 
+    # 🆕 비동기 메서드로 변경
+    @retry_on_failure(max_retries=3, delay=1.0)
+    async def get_station_status(self, station_id: str) -> Dict[str, Any]:
+        """특정 대여소의 상태 조회 (비동기)"""
+        logger.info(f"타슈 대여소 상태 조회: {station_id}")
+        
+        if not self.api_key:
+            logger.error("타슈 API 키가 설정되지 않음")
+            return self._get_dummy_station_status(station_id)
+        
+        try:
+            url = f"{self.BASE_URL}/stations/{station_id}/status"
+            logger.debug(f"타슈 상태 API 호출: {url}")
+            
+            response = await async_session.get(url, headers=self.headers)
+            response.raise_for_status()
+            
+            data = response.json()
+            status = self._process_station_status_data(data, station_id)
+            logger.info(f"타슈 대여소 {station_id} 상태 조회 완료")
+            
+            return status
+            
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationException("타슈 API 인증 실패", e.response.status_code, "TASHU")
+            else:
+                raise APIException(f"타슈 상태 API 오류: {e.response.status_code}", e.response.status_code, "TASHU")
+        except httpx.RequestError as e:
+            logger.error(f"타슈 상태 API 네트워크 오류: {e}")
+            return self._get_dummy_station_status(station_id)
+        except Exception as e:
+            logger.error(f"타슈 상태 API 처리 중 오류: {e}")
+            return self._get_dummy_station_status(station_id)
+
 
 class DuroonubiAPI:
     """두루누비(자전거 도로 정보) API 연동 클래스"""
-    
     BASE_URL = "https://api.duroonubi.kr/api"
     
     def __init__(self, api_key: str = DUROONUBI_API_KEY):
         self.api_key = api_key
-        self.session = create_session_with_retry()
+        # 동기 호출용 세션은 제거
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -252,8 +244,14 @@ class DuroonubiAPI:
         logger.info(f"두루누비 API 클라이언트 초기화 완료")
     
     @retry_on_failure(max_retries=3, delay=1.0)
-    def get_bike_paths(self, lat: float, lng: float, radius: int = 2000) -> Dict[str, Any]:
-        """특정 위치 주변의 자전거 도로 정보 조회"""
+    async def get_bike_paths(self, lat: float, lng: float, radius: int = 2000) -> Dict[str, Any]:
+        """특정 위치 주변의 자전거 도로 정보 조회 (비동기, 캐싱 적용)"""
+        cache_key = f"duroonubi_paths_{lat}_{lng}_{radius}"
+        cached_data = get_cache(cache_key)
+        if cached_data:
+            logger.info("✅ 캐시된 두루누비 도로 정보 반환")
+            return cached_data
+            
         logger.info(f"두루누비 자전거 도로 조회: lat={lat}, lng={lng}, radius={radius}")
         
         # 좌표 유효성 검사
@@ -274,59 +272,27 @@ class DuroonubiAPI:
             
             logger.debug(f"두루누비 API 호출: {url}, params: {params}")
             
-            response = self.session.get(url, headers=self.headers, params=params, timeout=10)
-            
-            if response.status_code == 401:
-                raise AuthenticationException("두루누비 API 인증 실패", response.status_code, "DUROONUBI")
-            elif response.status_code == 404:
-                logger.warning("두루누비 API 엔드포인트를 찾을 수 없음 - 더미 데이터 반환")
-                return self._get_dummy_bike_paths()
-            elif not response.ok:
-                raise APIException(f"두루누비 API 오류: {response.status_code}", response.status_code, "DUROONUBI")
+            response = await async_session.get(url, headers=self.headers, params=params)
+            response.raise_for_status()
             
             data = response.json()
             paths = self._process_bike_paths_data(data)
-            logger.info(f"두루누비 자전거 도로 조회 완료")
+            
+            set_cache(cache_key, paths, ex=3600) # 1시간 캐싱
             
             return paths
-            
-        except (AuthenticationException, DataFormatException, APIException):
-            # 이 예외들은 다시 발생시켜서 상위에서 처리하도록 함
-            raise
-        except requests.RequestException as e:
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationException("두루누비 API 인증 실패", e.response.status_code, "DUROONUBI")
+            else:
+                raise APIException(f"두루누비 API 오류: {e.response.status_code}", e.response.status_code, "DUROONUBI")
+        except httpx.RequestError as e:
             logger.error(f"두루누비 API 네트워크 오류: {e}")
-            if "Connection" in str(e) or "Timeout" in str(e):
-                return self._get_dummy_bike_paths()
-            raise NetworkException(f"두루누비 API 네트워크 오류: {e}", api_name="DUROONUBI")
+            return self._get_dummy_bike_paths()
         except Exception as e:
             logger.error(f"두루누비 API 처리 중 오류: {e}")
             return self._get_dummy_bike_paths()
-    
-    def _process_bike_paths_data(self, raw_data: Any) -> Dict[str, Any]:
-        """두루누비 자전거 도로 데이터 처리 및 표준화"""
-        try:
-            paths_data = safe_get(raw_data, 'bike_paths', 'paths', default=raw_data)
-            
-            if isinstance(paths_data, dict) and 'bike_paths' in paths_data:
-                paths_data = paths_data['bike_paths']
-            
-            processed_paths = []
-            
-            if isinstance(paths_data, list):
-                for path_raw in paths_data:
-                    try:
-                        standardized = standardize_bike_path_data(path_raw)
-                        processed_paths.append(standardized)
-                    except Exception as e:
-                        logger.warning(f"자전거 도로 데이터 처리 실패: {e}")
-                        continue
-            
-            return {"bike_paths": processed_paths}
-            
-        except Exception as e:
-            logger.error(f"두루누비 자전거 도로 데이터 처리 실패: {e}")
-            return {"bike_paths": []}
-    
+
     def _get_dummy_bike_paths(self) -> Dict[str, Any]:
         """테스트용 더미 자전거 도로 데이터"""
         logger.info("두루누비 더미 데이터 반환")
@@ -365,52 +331,45 @@ class DaejeonBikeAPI:
     
     def __init__(self, api_key: str = DAEJEON_BIKE_API_KEY):
         self.api_key = api_key
-        self.session = create_session_with_retry()
+        # 동기 호출용 세션은 제거
         self.params = {
             "apiKey": self.api_key,
             "format": "json"
         }
         logger.info(f"대전 자전거 API 클라이언트 초기화 완료")
     
+    # 🆕 비동기 메서드로 변경 및 캐싱 추가
     @retry_on_failure(max_retries=3, delay=1.0)
-    def get_bike_routes(self) -> Dict[str, Any]:
-        """대전시 자전거 노선 정보 조회"""
-        logger.info("대전 자전거 노선 정보 조회 시작")
-        
+    async def get_bike_routes(self) -> Dict[str, Any]:
+        """대전시 자전거 노선 정보 조회 (비동기, 캐싱 적용)"""
+        cache_key = "daejeon_bike_routes"
+        cached_data = get_cache(cache_key)
+        if cached_data:
+            logger.info("✅ 캐시된 대전 자전거 노선 정보 반환")
+            return cached_data
+            
         if not self.api_key:
-            logger.error("대전 자전거 API 키가 설정되지 않음")
             return self._get_dummy_bike_routes()
         
         try:
             url = f"{self.BASE_URL}/routes"
-            logger.debug(f"대전 자전거 API 호출: {url}")
-            
-            response = self.session.get(url, params=self.params, timeout=10)
-            
-            if response.status_code == 401:
-                raise AuthenticationException("대전 자전거 API 인증 실패", response.status_code, "DAEJEON_BIKE")
-            elif response.status_code == 404:
-                logger.warning("대전 자전거 API 엔드포인트를 찾을 수 없음 - 더미 데이터 반환")
-                return self._get_dummy_bike_routes()
-            elif not response.ok:
-                raise APIException(f"대전 자전거 API 오류: {response.status_code}", response.status_code, "DAEJEON_BIKE")
+            response = await async_session.get(url, params=self.params)
+            response.raise_for_status()
             
             data = response.json()
             routes = self._process_bike_routes_data(data)
-            logger.info(f"대전 자전거 노선 조회 완료")
+            
+            set_cache(cache_key, routes, ex=86400) # 24시간 캐싱
             
             return routes
-            
-        except (AuthenticationException, DataFormatException, APIException):
-            # 이 예외들은 다시 발생시켜서 상위에서 처리하도록 함
-            raise
-        except requests.RequestException as e:
-            logger.error(f"대전 자전거 API 네트워크 오류: {e}")
-            if "Connection" in str(e) or "Timeout" in str(e):
-                return self._get_dummy_bike_routes()
-            raise NetworkException(f"대전 자전거 API 네트워크 오류: {e}", api_name="DAEJEON_BIKE")
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationException("대전 자전거 API 인증 실패", e.response.status_code, "DAEJEON_BIKE")
+            else:
+                raise APIException(f"대전 자전거 API 오류: {e.response.status_code}", e.response.status_code, "DAEJEON_BIKE")
+        except httpx.RequestError as e:
+            return self._get_dummy_bike_routes()
         except Exception as e:
-            logger.error(f"대전 자전거 API 처리 중 오류: {e}")
             return self._get_dummy_bike_routes()
     
     def _process_bike_routes_data(self, raw_data: Any) -> Dict[str, Any]:
@@ -476,4 +435,4 @@ class DaejeonBikeAPI:
                     "description": "대청호 주변을 일주하는 자전거 코스입니다."
                 }
             ]
-        } 
+        }

@@ -1,13 +1,13 @@
 # app/services/route/route_service.py
-
 import logging
 import asyncio
 from typing import List, Dict, Any, Optional
 
-from app.common.utils import calculate_distance, validate_coordinates, DataFormatException
-# 서비스 레이어에 필요한 다른 서비스들을 import
-from app.services.external.external_api import TashuAPI
-from app.services.ai.ai_integration import AIRouteOptimizer
+from app.common.utils.math_utils import calculate_distance
+from app.common.utils.validators import validate_coordinates
+from app.common.utils.exceptions import DataFormatException
+from app.services.external.external_api import TashuAPI, DuroonubiAPI
+from app.services.ai.ai_integration import AIRouteOptimizer, AIRouteRequest
 from app.route_engine import RouteCalculator, RoutePreference
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ class RouteService:
     자전거 경로 찾기 비즈니스 로직을 담당하는 서비스 클래스.
     의존성 주입(Dependency Injection)을 통해 다른 서비스를 받아서 사용합니다.
     """
-    def __init__(self, tashu_api: TashuAPI, ai_optimizer: AIRouteOptimizer, route_calculator: RouteCalculator):
+    def __init__(self, tashu_api: TashuAPI, duroonubi_api: DuroonubiAPI, ai_optimizer: AIRouteOptimizer, route_calculator: RouteCalculator):
         self.tashu_api = tashu_api
         self.ai_optimizer = ai_optimizer
         self.route_calculator = route_calculator
@@ -164,25 +164,20 @@ class RouteService:
         }
     
     async def find_path_async(self, start_lat: float, start_lng: float, end_lat: float, end_lng: float, 
-                             preferences: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                            preferences: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
-        비동기적으로 출발지와 목적지 사이의 최적 자전거 경로를 찾는 함수.
+        비동기적으로 출발지와 목적지 사이의 최적 자전거 경로를 찾는 함수
         AI 모델을 사용하여 경로를 최적화합니다.
         """
         logger.info(f"경로 찾기 요청: ({start_lat}, {start_lng}) -> ({end_lat}, {end_lng})")
         
         try:
-            # AI 모델 요청 객체 생성
-            from app.services.ai.ai_integration import AIRouteRequest
             ai_request = AIRouteRequest(start_lat, start_lng, end_lat, end_lng, preferences)
+            ai_optimizer = AIRouteOptimizer(self.tashu_api, self.duroonubi_api)
+            ai_response = await ai_optimizer.find_optimal_route(ai_request)
             
-            # AI 모델을 사용하여 최적 경로 찾기
-            ai_response = await self.ai_optimizer.find_optimal_route(ai_request)
-            
-            # 주변 자전거 대여소 정보 추가
-            nearby_stations = await self._get_nearby_stations_async(start_lat, start_lng, end_lat, end_lng)
-            
-            # 턴바이턴 안내 생성
+            # 주변 대여소 정보는 AI 로직에서 이미 수집되므로, 여기서는 별도로 호출하지 않음
+            nearby_stations = ai_response.route_data.get('infrastructure', {}).get('bike_stations', [])
             instructions = self._generate_turn_by_turn_instructions(ai_response.coordinates, nearby_stations)
             
             # 최종 응답 구성
@@ -251,8 +246,8 @@ class RouteService:
         logger.info("주변 자전거 대여소 검색")
         
         try:
-            # 자전거 대여소 정보 조회
-            stations = self.tashu_api.get_stations()
+            # TashuAPI의 비동기 메서드를 호출
+            stations = await self.tashu_api.get_stations()
             
             # 각 대여소의 거리 계산
             for station in stations:
