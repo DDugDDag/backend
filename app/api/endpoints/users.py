@@ -1,8 +1,9 @@
 # app/api/endpoints/users.py
 
-from fastapi import APIRouter, Depends, HTTPException, status, Header
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import Optional
+# 🆕 List를 사용하기 위해 typing 모듈에서 가져옵니다.
+from typing import List, Optional
 
 from app.database.database import get_db
 from app.database.models.user import User
@@ -51,10 +52,10 @@ def update_user(
     user_id: int,
     user_update: UserUpdate,
     db: Session = Depends(get_db),
-    # 🆕 JWT 토큰으로 현재 로그인한 사용자 ID를 가져옵니다.
+    # JWT 토큰으로 현재 로그인한 사용자 ID를 가져옵니다.
     current_user_id: int = Depends(get_current_user_id)
 ):
-    # 🆕 현재 로그인한 사용자와 수정하려는 사용자가 동일한지 확인합니다.
+    # 현재 로그인한 사용자와 수정하려는 사용자가 동일한지 확인합니다.
     if user_id != current_user_id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -69,7 +70,6 @@ def update_user(
             detail="사용자를 찾을 수 없습니다."
         )
 
-    # 닉네임이 제공되면 업데이트
     if user_update.nickname:
         user_to_update.nickname = user_update.nickname
 
@@ -133,7 +133,7 @@ def add_user_record(
         end_point="목적지",
         start_lat=request.start_lat,
         start_lng=request.start_lng,
-        end_lat=request.end_lat,
+        end_lat=request.end_lng,
         end_lng=request.end_lng,
         distance=0.0,
         duration=0,

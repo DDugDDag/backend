@@ -1,16 +1,17 @@
 # tests/api/test_auth.py
 
+import sys
+import os
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+# 프로젝트 루트 경로를 sys.path에 추가하여 app 모듈을 찾도록 합니다.
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from app.database.database import Base, get_db
 from app.main import app
-import os
-import sys
-
-# 프로젝트 루트 경로를 sys.path에 추가 (conftest.py가 올바르게 작동하지 않을 경우를 대비)
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
+from unittest.mock import patch, Mock
+from typing import List, Dict
 
 # 테스트용 데이터베이스 설정
 TEST_DATABASE_URL = "sqlite:///./test.db"
@@ -37,9 +38,28 @@ def db_session_fixture():
         db.close()
         Base.metadata.drop_all(bind=test_engine)
 
-def test_kakao_login_success(db_session):
-    # TODO: 카카오 API를 Mocking하여 테스트해야 합니다.
-    # 이 코드는 더미 응답을 가정합니다.
+@patch('app.api.endpoints.auth.requests.post')
+@patch('app.api.endpoints.auth.requests.get')
+def test_kakao_login_success(mock_get, mock_post, db_session):
+    """카카오 로그인 성공 테스트 (Mocking)"""
+    # 카카오 토큰 발급 응답 모의
+    mock_token_response = Mock()
+    mock_token_response.status_code = 200
+    mock_token_response.json.return_value = {"access_token": "dummy_access_token"}
+    mock_token_response.raise_for_status.return_value = None
+    mock_post.return_value = mock_token_response
+
+    # 카카오 사용자 정보 응답 모의
+    mock_user_response = Mock()
+    mock_user_response.status_code = 200
+    mock_user_response.json.return_value = {
+        "id": 12345,
+        "kakao_account": {"email": "test@kakao.com"},
+        "properties": {"nickname": "테스트유저"}
+    }
+    mock_user_response.raise_for_status.return_value = None
+    mock_get.return_value = mock_user_response
+
     client = TestClient(app)
     response = client.post(
         "/api/auth/kakao",
@@ -47,4 +67,4 @@ def test_kakao_login_success(db_session):
     )
     assert response.status_code == 200
     assert "access_token" in response.json()
-    assert "user" in response.json()
+    assert response.json()["user"]["nickname"] == "테스트유저"
