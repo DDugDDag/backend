@@ -1,63 +1,73 @@
-# 뚜따 앱 백엔드 (FastAPI) - find-route 통합 완료
+# 뚜따 앱 백엔드 (FastAPI) - 4주차 통합 완료
 
-이 프로젝트는 뚜따 앱의 백엔드 서버 코드를 포함하고 있습니다. FastAPI 프레임워크를 사용하여 **CCH 알고리즘 기반 고도화된 자전거 경로 추천 API**와 카카오맵 웹뷰를 제공하는 웹 서버입니다.
+이 프로젝트는 뚜따 앱의 백엔드 서버 코드를 포함하고 있습니다. FastAPI 프레임워크를 사용하여 **CCH 알고리즘 기반 자전거 경로 추천 API, 사용자 인증 및 관리, 고객지원 시스템**을 제공합니다.
 
-## 🚀 find-route 통합 주요 성과
+## 🚀 주요 기능 및 성과
 
-### ✅ 완료된 핵심 기능
+### ✅ 4주차 개발 완료된 핵심 기능
 
-1. **find-route 프로젝트 통합 완료** - CCH(Customizable Contraction Hierarchies) 알고리즘 통합
-2. **고도화된 경로 계산 엔진** - 대전시 자전거 도로 API 기반 실제 도로 네트워크 구축
-3. **사용자 맞춤형 경로 추천** - 경치, 선호도를 고려한 개인화 경로 제공
-4. **AI 모델과 CCH 알고리즘 하이브리드** - 두 시스템의 장점을 결합한 최적 경로 제공
-5. **외부 API 연동 완료** - 타슈, 두루누비, 대전 자전거도로 API 실제 연동
-6. **포괄적 로깅 및 에러 핸들링** - 견고한 예외 처리 및 재시도 메커니즘
+1. **자전거 경로 추천 시스템:**
+    - CCH 알고리즘: 대전시 자전거 도로 API 기반의 실제 도로 네트워크를 구축하여 경로를 계산합니다.
+    - AI 모델 연동: 날씨, 경사 등을 고려한 맞춤형 경로 추천
+    - 사용자 맞춤형 경로 추천: 경치, 선호도를 고려한 개인화 경로 제공
+    - AI 모델과 CCH 알고리즘 하이브리드: 두 시스템의 장점을 결합한 최적 경로 제공
+2. **사용자 관리 및 인증:**
+    - Kakao 소셜 로그인: 카카오 계정을 통한 사용자 인증 및 JWT 토큰 발급 기능을 구현했습니다.
+    - 사용자 CRUD: 사용자 정보 조회 및 수정, 여행 기록 추가, 조회, 삭제 기능을 구현했습니다.
+3. **외부 API 연동:**
+    - 타슈 API: 대전 공공자전거 대여소의 위치 및 실시간 현황을 조회합니다.
+    - 두루누비 API: 주변 자전거 도로 정보를 조회합니다.
+    - 대전 자전거도로 API: 대전시의 자전거 노선 정보를 조회합니다.
+4. **고객지원 시스템:**
+    - 문의/건의사항: 사용자가 문의를 제출하면 데이터베이스에 저장되는 기능을 구현했습니다.
+5. **견고한 시스템:**
+    - 포괄적 테스트: pytest를 활용하여 외부 API 연동, 오류 처리, 데이터 표준화 등 다양한 시나리오에 대한 테스트를 완료했습니다.
+    - 안정성: 네트워크 오류 시 더미 데이터를 반환하는 폴백(fallback) 메커니즘을 적용하여 서비스의 연속성을 보장합니다.
 
 ## 기술 스택
 
 - **프레임워크**: FastAPI
 - **언어**: Python 3.8+
+- **데이터베이스**: MySQL, SQLAlchemy
 - **경로 계산 엔진**: CCH(Customizable Contraction Hierarchies) 알고리즘
-- **그래프 알고리즘**: 다익스트라, 사용자 맞춤형 경로 찾기
-- **AI 통합**: 비동기 AI 모델 연동 (HTTP 기반)
-- **외부 API**: 타슈, 두루누비, 대전 자전거도로/보관소 API 연동
 - **테스트**: pytest, pytest-asyncio
-- **템플릿 엔진**: Jinja2
-- **지도 서비스**: 카카오맵 JavaScript API
-- **검색 API**: 카카오 로컬 API
 - **HTTP 클라이언트**: requests, httpx (재시도 로직 포함)
+- **인증**: JWT, Kakao OAuth
 - **환경 변수 관리**: python-dotenv
-- **배포**: uvicorn (ASGI 서버)
 
 ## 프로젝트 구조
 
 ```
 backend/
-├── app/                       # 메인 애플리케이션 코드
-│   ├── api/                   # API 관련 모듈
-│   │   ├── external.py        # 🆕 외부 API 연동 (실제 API 호출 구현)
-│   │   ├── ai_integration.py  # 🆕 AI 모델 연동 및 최적화
-│   │   ├── utils.py           # 🆕 유틸리티 함수 및 예외 처리
-│   │   ├── route_finder.py    # 🔄 CCH + AI 하이브리드 경로 추천
-│   │   ├── routes.py          # 🔄 API 엔드포인트 (강화된 에러 핸들링)
-│   │   └── schemas.py         # 🔄 확장된 API 스키마 (AI 특화)
-│   ├── route_engine/          # 🆕 CCH 알고리즘 경로 계산 엔진 (find-route 통합)
-│   │   ├── __init__.py        # 모듈 초기화 및 export
-│   │   ├── cch.py             # CCH 알고리즘 구현
-│   │   ├── customer.py        # 사용자 맞춤형 경로 찾기
-│   │   ├── daejeon_bike.py    # 대전시 자전거 API 연동
-│   │   └── route_calculator.py # 통합 경로 계산 클래스
-│   ├── config/                # 설정 모듈
-│   ├── database/              # 데이터베이스 관련 모듈
-│   └── main.py                # 애플리케이션 진입점
-├── tests/                     # 🆕 포괄적 테스트 스위트
-│   ├── __init__.py
-│   └── test_external_apis.py  # 외부 API 단위/통합 테스트
-├── templates/                 # HTML 템플릿
-├── main.py                    # 서버 실행 스크립트
-├── requirements.txt           # 🔄 업데이트된 의존성 목록
-├── pytest.ini                # 🆕 pytest 설정
-└── env_example                # 환경 변수 예시 파일
+├── app/
+│   ├── api/                   # API 라우팅, 스키마
+│   │   ├── endpoints/         # API 엔드포인트 정의
+│   │   │   ├── auth.py        # 🔐 카카오 로그인
+│   │   │   ├── route_recommend.py # 🗺️ 경로 추천
+│   │   │   ├── support.py     # 🆕 고객지원
+│   │   │   ├── tashu.py       # 🚲 따릉이 정보
+│   │   │   └── users.py       # 👤 사용자 정보/기록
+│   │   ├── schemas/           # Pydantic 모델
+│   │   │   ├── route_schema.py
+│   │   │   └── support_schema.py # 🆕 문의 스키마
+│   │   └── __init__.py        # 라우터 등록
+│   ├── common/                # 공통 유틸리티 모듈
+│   │   └── utils/             # 예외, 재시도, 유효성 검사 등
+│   ├── core/                  # 애플리케이션 핵심 설정
+│   ├── database/              # 데이터베이스 모델
+│   │   └── models/
+│   │       ├── inquiry.py     # 🆕 문의 모델
+│   │       ├── route.py
+│   │       ├── user.py        # 🔄 사용자 모델
+│   │       └── ...
+│   ├── route_engine/          # CCH 알고리즘 엔진
+│   ├── services/              # 비즈니스 로직 및 외부 API 연동
+│   └── main.py                # FastAPI 앱 진입점
+├── tests/                     # 테스트 코드
+├── .env.example               # 환경 변수 예시
+├── pytest.ini                 # pytest 설정
+├── requirements.txt           # 의존성 목록
+└── README.md
 ```
 
 ## 🤖 AI 기반 경로 추천 시스템
@@ -190,7 +200,8 @@ pytest -v
 pytest tests/test_external_apis.py -v
 ```
 
-## 시작하기
+
+## 🚀 시작하기
 
 ### 1. 필요 패키지 설치
 
@@ -199,56 +210,54 @@ pip install -r requirements.txt
 ```
 
 ### 2. 환경 변수 설정
+프로젝트 루트에 .env 파일을 만들고 다음 내용을 추가하세요.
+```
+# ✅ Database 설정
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=ddudda0000
+DB_PASSWORD=your_ddudda_password
+DB_NAME=ddudda_db
 
-`.env` 파일을 루트 디렉토리에 생성하고 다음 내용을 추가하세요:
+# ✅ Kakao OAuth 설정
+KAKAO_REST_API_KEY=your_kakao_rest_api_key
+KAKAO_REDIRECT_URI=your_kakao_redirect_uri
 
-```env
-# 카카오 API
-KAKAO_MAP_API_KEY=YOUR_KAKAO_MAP_API_KEY
-KAKAO_RESTAPI_KEY=YOUR_KAKAO_REST_API_KEY
+# ✅ 외부 API 키
+TASHU_API_KEY=your_tashu_api_key
+DUROONUBI_API_KEY=your_duroonubi_api_key
+DAEJEON_BIKE_API_KEY=your_daejeon_bike_api_key
 
-# 외부 자전거 API
-TASHU_API_KEY=YOUR_TASHU_API_KEY
-DUROONUBI_API_KEY=YOUR_DUROONUBI_API_KEY
-DAEJEON_BIKE_API_KEY=YOUR_DAEJEON_BIKE_API_KEY
-
-# AI 모델 서버 (선택사항)
+# ✅ AI 모델 서버
 AI_MODEL_SERVER_URL=http://localhost:5000/api/route
+
+# ✅ JWT 설정
+SECRET_KEY=your_super_secret_jwt_key
+ACCESS_TOKEN_EXPIRE_MINUTES=10080
 ```
 
-### 3. 서버 실행
+### 3. 데이터베이스 설정
 
-```bash
-python main.py
+DBeaver와 같은 툴을 사용하여 ddudda_db 데이터베이스와 ddudda0000 사용자를 생성한 후, 다음 명령어로 테이블을 만드세요.
+```
+python -m app.database.create_tables
 ```
 
-또는 uvicorn 직접 실행:
+### 4. 서버 실행
 
-```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+# 서버 실행 (자동 리로드)
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-기본적으로 서버는 다음 주소에서 실행됩니다: `http://localhost:8000`
+기본적으로 서버는 http://localhost:8000에서 실행됩니다.
 
-## API 엔드포인트
+## 📝 API 문서
+서버 실행 후 다음 URL에서 자동 생성된 API 문서를 확인할 수 있습니다:
 
-### 경로 추천 관련 API
+   - Swagger UI: http://localhost:8000/docs
+   - ReDoc: http://localhost:8000/redoc
 
-| 경로                      | 메소드 | 설명                                  | 특징              |
-| ------------------------- | ------ | ------------------------------------- | ----------------- |
-| `/api/health`             | GET    | API 서버 상태 확인                    | 기본              |
-| `/api/find-path`          | POST   | 🆕 AI 기반 자전거 경로 추천           | **AI 통합**       |
-| `/api/bike-stations`      | GET    | 🔄 타슈 대여소 정보 조회 (실제 API)   | **실시간 데이터** |
-| `/api/bike-stations/{id}` | GET    | 🆕 특정 대여소 상태 조회              | **상태 모니터링** |
-| `/api/bike-paths`         | GET    | 🔄 자전거 도로 정보 조회 (실제 API)   | **반경 검색**     |
-| `/api/bike-routes`        | GET    | 🔄 대전시 자전거 노선 정보 (실제 API) | **노선 정보**     |
-
-### 카카오맵 웹뷰 관련 API (기존 유지)
-
-| 경로          | 메소드 | 설명               | 파라미터                                        |
-| ------------- | ------ | ------------------ | ----------------------------------------------- |
-| `/map`        | GET    | 카카오맵 웹뷰 제공 | `lat`, `lng`, `markers`                         |
-| `/api/search` | GET    | 장소 검색 API      | `query`, `lat`, `lng`, `radius`, `page`, `size` |
 
 ## 🛡️ 보안 및 안정성
 
@@ -336,25 +345,33 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4
 - **Swagger UI**: `http://localhost:8000/docs`
 - **ReDoc**: `http://localhost:8000/redoc`
 
-## 🚧 다음 개발 계획 (4주차)
+## 🚧 다음 개발 계획 (5주차)
 
 ### 우선순위 높음
 
-1. **실제 AI 모델 서버 연동** - HTTP 클라이언트 구현 완료
-2. **사용자 인증 시스템** - JWT 기반 인증 구현
-3. **경로 저장 및 즐겨찾기** - 데이터베이스 모델 확장
+1. **사용자 정보 수정 기능 완성:** 
+   - PUT /api/users/{user_id} 엔드포인트에 실제 DB 업데이트 로직 구현
+   - JWT 토큰 기반 사용자 인증 및 권한 확인 로직 추가
+2. **AI 경로 추천 시스템 고도화:** 
+   - AI_MODEL_SERVER_URL에 실제 AI 모델 서버를 연동하는 httpx 비동기 요청 로직 구현
+   - AIRouteOptimizer의 _call_ai_model 함수 내 더미 데이터 제거 및 실제 API 호출 로직 완성
+3. **고객지원 시스템 완성:** 
+   - Inquiry 모델에 문의 상태(status) 변경 기능 추가
+   - 관리자용 문의 조회 API(예: GET /api/support/inquiries) 구현
 
 ### 우선순위 중간
 
-1. **실시간 위치 추적** - WebSocket 기반 구현
-2. **성능 모니터링** - APM 도구 연동
-3. **캐싱 시스템** - Redis 기반 응답 캐싱
-
-### 우선순위 낮음
-
-1. **다국어 지원** - i18n 시스템 구축
-2. **관리자 대시보드** - API 사용량 모니터링
-3. **배치 작업** - 대여소 상태 주기적 업데이트
+1. **장소 검색 API 구현:** 
+   - 카카오 로컬 API와 연동하는 app/services/external/kakao_api.py 같은 클라이언트 모듈 개발
+   - GET /api/search/places 엔드포인트에 검색 로직 구현
+2. **현재 위치 기반 날씨 조회 구현:** 
+   - 외부 날씨 API(예: 기상청)와 연동하는 클라이언트 모듈 개발
+   - GET /api/weather 엔드포인트 구현
+3. **성능 개선:** 
+   - 캐싱 시스템 도입: Redis를 활용하여 자주 조회되는 데이터(예: 따릉이 대여소 정보, 인기 경로)를 캐싱하여 API 응답 시간 단축
+   - 비동기 처리: AI 모델 호출 시 비동기 처리로 응답 시간 최소화
+   - 외부 API 병렬 호출 지원: 여러 API 호출을 병렬로 처리하여 응답 시간 단축
+   - 세션 재사용: 세션 재사용을 통한 연결 오버헤드 감소
 
 ## 📚 참고 자료
 
