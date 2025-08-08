@@ -9,15 +9,20 @@ class UserBase(BaseModel):
     email: str
     nickname: str
 
+
 class UserCreate(UserBase):
     password: str
 
+class UserUpdate(BaseModel):
+    """사용자 정보 수정 요청 모델"""
+    nickname: Optional[str] = Field(None, description="새로운 닉네임")
+    
 class UserResponse(UserBase):
     id: int
     created_at: datetime
     
-    class Config:
-        from_attributes = True
+class Config:
+    from_attributes = True
 
 # 경로 관련 스키마
 class RouteRequest(BaseModel):

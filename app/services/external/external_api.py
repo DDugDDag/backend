@@ -1,22 +1,22 @@
 # app/services/external/external_api.py
+
 import logging
 import httpx
 import asyncio
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
-from app.core.config import TASHU_API_KEY, DUROONUBI_API_KEY, DAEJEON_BIKE_API_KEY
+from app.core.config import TASHU_API_KEY, DUROONUBI_API_KEY, DAEJEON_BIKE_API_KEY, API_KEY
 from app.common.utils.exceptions import APIException, NetworkException, AuthenticationException, DataFormatException
-from app.common.utils.retry import retry_on_failure, create_session_with_retry
+from app.common.utils.retry import retry_on_failure
 from app.common.utils.validators import validate_coordinates, safe_get
 from app.common.utils.standardizers import standardize_station_data, standardize_bike_path_data
 from app.common.utils.cache import get_cache, set_cache
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
-# 세션 재사용을 위한 싱글톤 HTTPX 클라이언트
 async_session = httpx.AsyncClient(timeout=10.0)
-
 
 class TashuAPI:
     """타슈(대전 공공자전거) API 연동 클래스"""
@@ -436,3 +436,114 @@ class DaejeonBikeAPI:
                 }
             ]
         }
+
+class PublicDataAPI:
+    """공공데이터포털 API 연동 클래스 (위치기반 추천 장소)"""
+
+    BASE_URL = "http://api.data.go.kr/openapi/service"
+
+    def __init__(self, api_key: str = API_KEY):
+        self.api_key = api_key
+        logger.info("공공데이터포털 API 클라이언트 초기화 완료")
+
+    @retry_on_failure(max_retries=3, delay=1.0)
+    async def get_nearby_places(self, lat: float, lng: float, radius: int = 1000) -> List[Dict[str, Any]]:
+        """
+        위치 기반 주변 추천 장소를 조회합니다.
+        
+        Args:
+            lat (float): 현재 위치 위도
+            lng (float): 현재 위치 경도
+            radius (int): 검색 반경 (미터)
+            
+        Returns:
+            List[Dict[str, Any]]: 추천 장소 리스트
+        """
+        cache_key = f"nearby_places_{lat}_{lng}_{radius}"
+        cached_data = get_cache(cache_key)
+        if cached_data:
+            logger.info("✅ 캐시된 주변 추천 장소 정보 반환")
+            return cached_data
+
+        logger.info(f"주변 추천 장소 조회 시작: lat={lat}, lng={lng}, radius={radius}")
+
+        if not self.api_key:
+            logger.error("공공데이터포털 API 키가 설정되지 않음")
+            return self._get_dummy_places()
+
+        try:
+            # API URL 및 파라미터 구성
+            # 실제 공공데이터포털 API 명세에 따라 엔드포인트를 변경해야 합니다.
+            # 예시: 위치기반 관광정보 조회 서비스
+            endpoint = "/15101578/locationBasedList2/locationBasedList2"
+            url = f"{self.BASE_URL}{endpoint}"
+            params = {
+                "serviceKey": self.api_key,
+                "mapX": lng,  # 공공데이터포털은 경도를 mapX로 사용
+                "mapY": lat,  # 위도를 mapY로 사용
+                "radius": radius,
+                "contentTypeId": 28,  # 예시: 레포츠
+                "_type": "json"
+            }
+
+            response = await async_session.get(url, params=params)
+            response.raise_for_status()
+
+            data = response.json()
+            places = self._process_public_places_data(data)
+            
+            set_cache(cache_key, places, ex=3600)  # 1시간 캐싱
+
+            return places
+
+        except httpx.HTTPStatusError as e:
+            raise APIException(f"API 오류: {e.response.status_code}", e.response.status_code, "PublicDataAPI")
+        except httpx.RequestError as e:
+            raise NetworkException(f"네트워크 오류: {e}", api_name="PublicDataAPI")
+        except Exception as e:
+            logger.error(f"처리 중 오류: {e}")
+            return self._get_dummy_places()
+
+    def _process_public_places_data(self, raw_data: Any) -> List[Dict[str, Any]]:
+        """공공데이터포털 API 응답 데이터 처리"""
+        try:
+            items = safe_get(raw_data, 'response', 'body', 'items', 'item', default=[])
+            if not isinstance(items, list):
+                items = [items] if isinstance(items, dict) else []
+
+            processed_places = []
+            for item in items:
+                processed_places.append({
+                    "id": safe_get(item, 'contentid'),
+                    "name": safe_get(item, 'title'),
+                    "lat": safe_get(item, 'mapy'),
+                    "lng": safe_get(item, 'mapx'),
+                    "address": safe_get(item, 'addr1'),
+                    "image": safe_get(item, 'firstimage')
+                })
+            return processed_places
+        except Exception as e:
+            logger.error(f"공공데이터포털 데이터 처리 실패: {e}")
+            return []
+
+    def _get_dummy_places(self) -> List[Dict[str, Any]]:
+        """테스트용 더미 장소 데이터"""
+        logger.info("공공데이터포털 더미 데이터 반환")
+        return [
+            {
+                "id": "DUMMY001",
+                "name": "더미 공원",
+                "lat": 36.35,
+                "lng": 127.38,
+                "address": "대전광역시 유성구",
+                "image": "https://placehold.co/150x150"
+            },
+            {
+                "id": "DUMMY002",
+                "name": "더미 자전거길",
+                "lat": 36.36,
+                "lng": 127.37,
+                "address": "대전광역시 서구",
+                "image": "https://placehold.co/150x150"
+            }
+        ]

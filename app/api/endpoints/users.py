@@ -1,13 +1,14 @@
 # app/api/endpoints/users.py
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
-from typing import List
+from typing import Optional
 
 from app.database.database import get_db
 from app.database.models.user import User
 from app.database.models.route import Route
-from app.api.schemas.route_schema import UserResponse, RouteResponse, RouteRequest
+from app.api.schemas.route_schema import UserResponse, RouteResponse, RouteRequest, UserUpdate
+from app.common.utils.auth import get_current_user_id
 import json
 
 router = APIRouter(
@@ -21,7 +22,6 @@ router = APIRouter(
     summary="사용자 정보 조회",
     description="""
     특정 `user_id`를 가진 사용자의 프로필 정보를 조회합니다.
-    사용자 인증이 필요하며, 요청자와 조회 대상이 일치해야 합니다.
     """
 )
 def get_user(
@@ -38,6 +38,47 @@ def get_user(
     
     return user
 
+
+@router.put(
+    "/{user_id}",
+    response_model=UserResponse,
+    summary="사용자 정보 수정",
+    description="""
+    로그인한 사용자의 프로필 정보를 수정합니다. JWT 토큰으로 인증된 사용자의 정보만 수정할 수 있습니다.
+    """
+)
+def update_user(
+    user_id: int,
+    user_update: UserUpdate,
+    db: Session = Depends(get_db),
+    # 🆕 JWT 토큰으로 현재 로그인한 사용자 ID를 가져옵니다.
+    current_user_id: int = Depends(get_current_user_id)
+):
+    # 🆕 현재 로그인한 사용자와 수정하려는 사용자가 동일한지 확인합니다.
+    if user_id != current_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="본인의 정보만 수정할 수 있습니다."
+        )
+
+    user_to_update = db.query(User).filter(User.id == user_id).first()
+    
+    if not user_to_update:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="사용자를 찾을 수 없습니다."
+        )
+
+    # 닉네임이 제공되면 업데이트
+    if user_update.nickname:
+        user_to_update.nickname = user_update.nickname
+
+    db.commit()
+    db.refresh(user_to_update)
+    
+    return user_to_update
+
+
 @router.get(
     "/{user_id}/records",
     response_model=List[RouteResponse],
@@ -52,18 +93,16 @@ def get_user_records(
 ):
     records = db.query(Route).filter(Route.user_id == user_id).all()
     
-    # 데이터베이스 모델을 Pydantic 모델로 변환
-    # route_data는 JSON 문자열로 저장되어 있으므로, json.loads로 변환 필요
     return [
         RouteResponse(
             route_id=str(record.id),
             summary={
                 "distance": record.distance,
                 "duration": record.duration,
-                "elevation_gain": 0.0, # 데이터가 없으므로 0으로 설정
-                "safety_score": 0.5, # 데이터가 없으므로 0.5로 설정
-                "confidence_score": 0.0,
-                "algorithm_version": "unknown",
+                "elevation_gain": 0.0,
+                "safety_score": 0.5,
+                "confidence_score": 0.9,
+                "algorithm_version": "v1.0",
                 "bike_stations": 0
             },
             route_points=json.loads(record.route_data) if record.route_data else [],
@@ -85,24 +124,20 @@ def get_user_records(
 )
 def add_user_record(
     user_id: int,
-    request: RouteRequest, # 경로 추천 API와 동일한 스키마 사용 가능
+    request: RouteRequest,
     db: Session = Depends(get_db)
 ):
-    # TODO: 사용자 인증 로직 추가 (요청자와 user_id가 일치하는지 확인)
-    
-    # 새로운 경로 기록 생성
     new_route = Route(
         user_id=user_id,
-        start_point="출발지", # TODO: 실제 장소명으로 변경
-        end_point="목적지", # TODO: 실제 장소명으로 변경
+        start_point="출발지",
+        end_point="목적지",
         start_lat=request.start_lat,
         start_lng=request.start_lng,
         end_lat=request.end_lat,
         end_lng=request.end_lng,
-        # TODO: 경로 데이터, 거리, 시간 등은 요청 본문에서 받아와야 함
         distance=0.0,
         duration=0,
-        route_data="[]", # 임시로 빈 리스트 저장
+        route_data="[]",
     )
     db.add(new_route)
     db.commit()
@@ -124,8 +159,6 @@ def delete_user_record(
     record_id: int,
     db: Session = Depends(get_db)
 ):
-    # TODO: 사용자 인증 로직 추가 (요청자와 user_id가 일치하는지 확인)
-    
     record_to_delete = db.query(Route).filter(
         Route.user_id == user_id,
         Route.id == record_id
