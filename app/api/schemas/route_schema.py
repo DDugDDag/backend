@@ -7,6 +7,7 @@ from datetime import datetime
 class UserBase(BaseModel):
     username: str
     email: str
+    nickname: str
 
 class UserCreate(UserBase):
     password: str
@@ -21,11 +22,18 @@ class UserResponse(UserBase):
 # 경로 관련 스키마
 class RouteRequest(BaseModel):
     """경로 찾기 요청 모델"""
-    start_lat: float = Field(..., description="출발지 위도", ge=-90, le=90)
-    start_lng: float = Field(..., description="출발지 경도", ge=-180, le=180)
-    end_lat: float = Field(..., description="목적지 위도", ge=-90, le=90)
-    end_lng: float = Field(..., description="목적지 경도", ge=-180, le=180)
-    preferences: Optional[Dict[str, Any]] = Field(default={}, description="경로 탐색 설정")
+    start_lat: float = Field(..., description="출발지 위도", ge=-90, le=90, example=36.3504)
+    start_lng: float = Field(..., description="출발지 경도", ge=-180, le=180, example=127.3845)
+    end_lat: float = Field(..., description="목적지 위도", ge=-90, le=90, example=36.3621)
+    end_lng: float = Field(..., description="목적지 경도", ge=-180, le=180, example=127.3489)
+    preferences: Optional[Dict[str, Any]] = Field(
+        default={},
+        description="""
+        경로 탐색에 영향을 주는 사용자 설정.
+        - `prioritize_safety`: `bool` 안전한 경로 우선 (기본값: `false`)
+        - `avoid_hills`: `bool` 언덕 피하기 (기본값: `false`)
+        """
+    )
 
 class RoutePoint(BaseModel):
     """경로상의 한 점을 나타내는 모델"""

@@ -33,7 +33,21 @@ def get_route_service() -> RouteService:
 # 기존에 최상단에서 인스턴스화하던 부분을 모두 삭제하고
 # 의존성 주입을 통해 받도록 변경합니다.
 
-@router.get("/bike-paths")
+@router.get("/bike-paths", 
+    summary="주변 자전거 도로 정보 조회",
+    description="""
+    특정 위치(위도, 경도)를 기준으로 주변 반경(radius) 내의 자전거 도로 정보를 조회합니다.
+    - `lat`, `lng`: 조회할 중심 좌표
+    - `radius`: 검색 반경 (단위: 미터). 기본값은 2000m입니다.
+    """,
+    responses={
+        200: {"description": "성공적으로 자전거 도로 정보를 조회했습니다."},
+        400: {"description": "요청 파라미터가 잘못되었습니다."},
+        401: {"description": "API 키 인증에 실패했습니다."},
+        500: {"description": "서버 내부 오류가 발생했습니다."},
+        503: {"description": "외부 API 서버에 연결할 수 없습니다."}
+    }
+)
 def get_bike_paths(
     lat: float, lng: float, radius: int = 2000,
     duroonubi_api: DuroonubiAPI = Depends()  # DuroonubiAPI를 의존성 주입
@@ -73,7 +87,17 @@ def get_bike_paths(
         raise HTTPException(status_code=500, detail="자전거 도로 정보 조회 중 오류가 발생했습니다.")
 
 
-@router.post("/find-path", response_model=RouteResponse)
+@router.post("/find-path", response_model=RouteResponse,
+            summary="AI 기반 자전거 경로 추천",
+            description="출발지와 목적지, 그리고 사용자 선호도를 바탕으로 최적의 자전거 경로를 추천합니다.",
+            responses={
+                200: {"description": "성공적으로 경로를 찾았습니다."},
+                400: {"description": "요청 파라미터가 잘못되었습니다."},
+                401: {"description": "API 키 인증에 실패했습니다."},
+                500: {"description": "서버 내부 오류가 발생했습니다."},
+                503: {"description": "외부 API 서버에 연결할 수 없습니다."}
+            }
+)
 async def find_path(
     request: RouteRequest,
     route_service: RouteService = Depends(get_route_service)
@@ -101,11 +125,22 @@ async def find_path(
         raise HTTPException(status_code=500, detail=f"경로 찾기 중 오류가 발생했습니다: {str(e)}")
 
 
-@router.get("/bike-routes")
+@router.get("/bike-routes",
+            summary="대전시 자전거 노선 정보 조회",
+            description="""
+            대전시 자전거 노선 정보를 조회하는 API
+            """,
+            responses={
+                200: {"description": "성공적으로 자전거 노선 정보를 조회했습니다."},
+                401: {"description": "API 키 인증에 실패했습니다."},
+                500: {"description": "서버 내부 오류가 발생했습니다."},
+                503: {"description": "외부 API 서버에 연결할 수 없습니다."}
+            }
+)
 def get_bike_routes(
     daejeon_bike_api: DaejeonBikeAPI = Depends() # DaejeonBikeAPI를 의존성 주입
 ):
-    """
+    """ 
     대전시 자전거 노선 정보를 조회하는 API
     """
     logger.info("대전 자전거 노선 조회 요청")

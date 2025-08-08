@@ -5,7 +5,9 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 import json
 
-from app.common.utils import calculate_distance, validate_coordinates, DataFormatException
+from app.common.utils.math_utils import calculate_distance
+from app.common.utils.validators import validate_coordinates
+from app.common.utils.exceptions import DataFormatException
 from app.services.external.external_api import TashuAPI, DuroonubiAPI
 
 logger = logging.getLogger(__name__)
@@ -22,15 +24,18 @@ class AIRouteRequest:
         self.timestamp = datetime.now().isoformat()
     
     def to_dict(self) -> Dict[str, Any]:
-        """AI 모델 요청을 위한 딕셔너리로 변환"""
+        """
+        AI 모델 요청을 위한 딕셔너리로 변환
+        스키마와 일관성을 위해 'lat', 'lng' 키를 사용하도록 수정
+        """
         return {
             "start_location": {
-                "latitude": self.start_lat,
-                "longitude": self.start_lng
+                "lat": self.start_lat,
+                "lng": self.start_lng
             },
             "end_location": {
-                "latitude": self.end_lat,
-                "longitude": self.end_lng
+                "lat": self.end_lat,
+                "lng": self.end_lng
             },
             "preferences": self.preferences,
             "timestamp": self.timestamp
@@ -71,12 +76,15 @@ class AIRouteResponse:
         return self.route_data.get('safety_score', 0.5)
 
 class AIRouteOptimizer:
-    """AI 기반 경로 최적화 클래스"""
+    """
+    AI 기반 경로 최적화 클래스 (의존성 주입을 받도록 수정)
+    """
     
-    def __init__(self):
-        self.tashu_api = TashuAPI()
-        self.duroonubi_api = DuroonubiAPI()
-        self.model_url = "http://localhost:5000/api/route"  # AI 모델 서버 URL (추후 설정)
+    def __init__(self, tashu_api: TashuAPI, duroonubi_api: DuroonubiAPI):
+        # 의존성을 직접 생성하지 않고, 외부에서 주입받도록 수정
+        self.tashu_api = tashu_api
+        self.duroonubi_api = duroonubi_api
+        self.model_url = "http://localhost:5000/api/route"
         self.fallback_enabled = True
         logger.info("AI 경로 최적화 모듈 초기화 완료")
     
@@ -88,11 +96,9 @@ class AIRouteOptimizer:
         self._validate_request(request)
         
         try:
-            # AI 모델 호출 시도
             ai_response = await self._call_ai_model(request)
             logger.info("AI 모델 응답 수신 완료")
             return ai_response
-            
         except Exception as e:
             logger.warning(f"AI 모델 호출 실패: {e}")
             
@@ -110,25 +116,17 @@ class AIRouteOptimizer:
         if not validate_coordinates(request.end_lat, request.end_lng):
             raise DataFormatException(f"잘못된 목적지 좌표: {request.end_lat}, {request.end_lng}")
         
-        # 출발지와 목적지가 너무 가까운 경우
         distance = calculate_distance(request.start_lat, request.start_lng, request.end_lat, request.end_lng)
-        if distance < 0.1:  # 100m 미만
+        if distance < 0.1:
             raise DataFormatException("출발지와 목적지가 너무 가깝습니다.")
         
-        # 거리가 너무 먼 경우 (100km 이상)
         if distance > 100:
             raise DataFormatException("출발지와 목적지가 너무 멉니다.")
     
     async def _call_ai_model(self, request: AIRouteRequest) -> AIRouteResponse:
         """실제 AI 모델 호출"""
         try:
-            # 실제 AI 모델 서버에 HTTP 요청을 보내는 로직
-            # 현재는 더미 구현
-            
-            # AI 모델 요청 데이터 준비
             request_data = request.to_dict()
-            
-            # 주변 인프라 정보 수집
             infrastructure_data = await self._collect_infrastructure_data(request)
             request_data['infrastructure'] = infrastructure_data
             
@@ -141,11 +139,9 @@ class AIRouteOptimizer:
             #     response.raise_for_status()
             #     ai_result = response.json()
             
-            # 임시 더미 응답 (실제 AI 모델 연동 전까지)
             ai_result = await self._generate_dummy_ai_response(request, infrastructure_data)
             
             return AIRouteResponse(ai_result)
-            
         except Exception as e:
             logger.error(f"AI 모델 호출 중 오류: {e}")
             raise
@@ -157,29 +153,25 @@ class AIRouteOptimizer:
         infrastructure = {
             "bike_stations": [],
             "bike_paths": [],
-            "weather": "clear",  # 추후 날씨 API 연동
-            "traffic_conditions": "normal"  # 추후 교통 정보 API 연동
+            "weather": "clear",
+            "traffic_conditions": "normal"
         }
         
         try:
-            # 자전거 대여소 정보 수집
             stations = self.tashu_api.get_stations()
             infrastructure["bike_stations"] = stations
             logger.info(f"자전거 대여소 {len(stations)}개 수집 완료")
             
-            # 자전거 도로 정보 수집
             center_lat = (request.start_lat + request.end_lat) / 2
             center_lng = (request.start_lng + request.end_lng) / 2
             distance = calculate_distance(request.start_lat, request.start_lng, request.end_lat, request.end_lng)
-            search_radius = min(max(int(distance * 1000), 2000), 10000)  # 2km ~ 10km
+            search_radius = min(max(int(distance * 1000), 2000), 10000)
             
             bike_paths = self.duroonubi_api.get_bike_paths(center_lat, center_lng, search_radius)
             infrastructure["bike_paths"] = bike_paths.get("bike_paths", [])
             logger.info(f"자전거 도로 {len(infrastructure['bike_paths'])}개 수집 완료")
-            
         except Exception as e:
             logger.warning(f"인프라 데이터 수집 중 오류: {e}")
-            # 오류가 발생해도 계속 진행 (부분적인 데이터로도 경로 계산 가능)
         
         return infrastructure
     
@@ -187,11 +179,9 @@ class AIRouteOptimizer:
         """AI 모델 연동 전 임시 더미 응답 생성"""
         logger.info("더미 AI 응답 생성")
         
-        # 거리 및 시간 계산
         distance = calculate_distance(request.start_lat, request.start_lng, request.end_lat, request.end_lng)
-        duration = max(int(distance / 15 * 60), 5)  # 평균 15km/h, 최소 5분
+        duration = max(int(distance / 15 * 60), 5)
         
-        # 더 정교한 경로 포인트 생성
         coordinates = self._generate_smart_route_points(
             request.start_lat, request.start_lng, 
             request.end_lat, request.end_lng,
@@ -209,15 +199,12 @@ class AIRouteOptimizer:
             "process_time": 0.5
         }
     
-    def _generate_smart_route_points(self, start_lat: float, start_lng: float, 
-                                   end_lat: float, end_lng: float, 
-                                   bike_paths: List[Dict[str, Any]]) -> List[Dict[str, float]]:
+    def _generate_smart_route_points(self, start_lat: float, start_lng: float, end_lat: float, end_lng: float, bike_paths: List[Dict[str, Any]]) -> List[Dict[str, float]]:
         """자전거 도로 정보를 고려한 더 정교한 경로 포인트 생성"""
         import random
         
-        # 기본 직선 경로 생성
         distance = calculate_distance(start_lat, start_lng, end_lat, end_lng)
-        num_points = max(5, int(distance * 4))  # 더 세밀한 포인트
+        num_points = max(5, int(distance * 4))
         
         coordinates = []
         
@@ -226,24 +213,21 @@ class AIRouteOptimizer:
             lat = start_lat + (end_lat - start_lat) * ratio
             lng = start_lng + (end_lng - start_lng) * ratio
             
-            # 자전거 도로 근처로 경로 조정 (간단한 휴리스틱)
             if bike_paths and 0 < i < num_points:
                 closest_path = min(bike_paths, 
-                                 key=lambda path: min(
-                                     calculate_distance(lat, lng, coord["lat"], coord["lng"])
-                                     for coord in path.get("coordinates", [{"lat": lat, "lng": lng}])
-                                 ) if path.get("coordinates") else float('inf'))
+                key=lambda path: min(
+                    calculate_distance(lat, lng, coord["lat"], coord["lng"])
+                    for coord in path.get("coordinates", [{"lat": lat, "lng": lng}])
+                ) if path.get("coordinates") else float('inf'))
                 
                 if closest_path.get("coordinates"):
                     closest_coord = min(closest_path["coordinates"],
                                       key=lambda coord: calculate_distance(lat, lng, coord["lat"], coord["lng"]))
                     
-                    # 자전거 도로 방향으로 약간 조정
                     adjustment_factor = 0.3
                     lat += (closest_coord["lat"] - lat) * adjustment_factor
                     lng += (closest_coord["lng"] - lng) * adjustment_factor
             
-            # 약간의 자연스러운 변화 추가
             if 0 < i < num_points:
                 lat += random.uniform(-0.0005, 0.0005)
                 lng += random.uniform(-0.0005, 0.0005)
@@ -256,13 +240,11 @@ class AIRouteOptimizer:
         """AI 모델 실패 시 대체 경로 계산"""
         logger.info("대체 경로 계산 알고리즘 실행")
         
-        # 인프라 데이터 수집
         infrastructure = await self._collect_infrastructure_data(request)
         
-        # 더미 응답 생성 (대체 알고리즘)
         result = await self._generate_dummy_ai_response(request, infrastructure)
         result["algorithm_version"] = "fallback_v1.0"
-        result["confidence_score"] = 0.6  # 대체 알고리즘이므로 낮은 신뢰도
+        result["confidence_score"] = 0.6
         
         return AIRouteResponse(result)
     
@@ -271,6 +253,6 @@ class AIRouteOptimizer:
         return {
             "model_url": self.model_url,
             "fallback_enabled": self.fallback_enabled,
-            "status": "ready",  # TODO: 실제 모델 상태 확인
+            "status": "ready",
             "last_check": datetime.now().isoformat()
-        } 
+        }

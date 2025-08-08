@@ -6,7 +6,6 @@ httpx==0.24.1
 requests==2.31.0
 pytest==7.4.0
 pytest-asyncio==0.21.0 
-sqlalchemy==2.0.41
 pymysql==1.1.1
 # find-route 프로젝트 의존성
 certifi>=2023.7.22
@@ -17,3 +16,4 @@ requests
 fastapi
 sqlalchemy
 python-dotenv
+sqlalchemy[pymysql]

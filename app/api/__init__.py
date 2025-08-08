@@ -1,9 +1,10 @@
 # app/api/__init__.py
 from fastapi import APIRouter
-from app.api.endpoints import auth, tashu, route_recommend, users
+from app.api.endpoints import auth, tashu, route_recommend, users, support
 
 router = APIRouter()
 router.include_router(auth.router, prefix="/api", tags=["auth"])
 router.include_router(tashu.router, prefix="/api", tags=["tashu"])
 router.include_router(route_recommend.router, prefix="/api", tags=["route"])
 router.include_router(users.router, prefix="/api", tags=["users"])
+router.include_router(support.router, prefix="/api", tags=["support"])
